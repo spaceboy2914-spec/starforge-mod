@@ -1,83 +1,99 @@
-﻿name: Build and Developmental Release
+name: Build and Developmental Release
 
 on:
-  push:
-    branches: 
-      - '**'  # Trigger on any branch push
-  workflow_dispatch:
+push:
+branches:
+- '**'
+workflow_dispatch:
 
 jobs:
-  build:
-    name: Build x64-Release
-    runs-on: windows-latest
+build:
+name: Build x64-Release
+runs-on: windows-latest
 
-    steps:
-      # Checkout the code
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        
-      - name: Build Frontend
-        shell: pwsh
-        run: |
-          cd frontend
-          npm install
-          npm run build
-          xcopy "out" "..\\backend\\bin\\resources\\adaf.starforge" /E /H /C /I /Y
+```
+steps:
+  - name: Checkout Repository
+    uses: actions/checkout@v4
+    
+  - name: Build Frontend
+    shell: pwsh
+    run: |
+      cd frontend
+      npm install
+      npm run build
 
-      - uses: geode-sdk/build-geode-mod@main
-        id: build
-        with:
-          path: backend 
+      # Ensure destination exists
+      mkdir ..\backend\bin\resources -Force
+      mkdir ..\backend\bin\resources\adaf.starforge -Force
 
-      - name: Compress Build Output
-        shell: pwsh
-        run: |
-          cd backend
-          if (Test-Path out) { Remove-Item -Recurse -Force out }
-          mkdir out
-          xcopy bin\resources out\resources /E /I /Y
-          xcopy resources out\resources /E /I /Y
-          cp about.md out/
-          cp changelog.md out/
-          cp logo.png out/
-          cp mod.json out/
-          cp build/*.dll out/
-          cmd /c "del /s /q out\\*.psd"
-          cmd /c "del /s /q out\\*.blend"
-          cd out
-          7z a -tzip adaf.starforge.geode -mx9 *
-         
-      # Upload the compressed file
-      - name: Upload Build Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: adaf.starforge.geode
-          path: backend/out/adaf.starforge.geode
+      # Copy frontend output safely
+      Copy-Item "out\*" "..\backend\bin\resources\adaf.starforge" -Recurse -Force
 
-  release:
-    name: Create Developmental Release
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
+  - name: Build Geode Mod
+    uses: geode-sdk/build-geode-mod@main
+    id: build
+    with:
+      path: backend 
 
-    steps:
-      # Download the compressed build artifact
-      - name: Download Build Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: adaf.starforge.geode
-          path: .
+  - name: Compress Build Output
+    shell: pwsh
+    run: |
+      cd backend
 
-      # Create GitHub Release
-      - name: Update Development Release
-        uses: andelf/nightly-release@main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: develop
-          name: 'Developmental Build'
-          body: |
-            Development release for commit ${{ github.sha }}.
-          files: |
-            ./adaf.starforge.geode
+      if (Test-Path out) { Remove-Item -Recurse -Force out }
+      mkdir out
+
+      # Copy resources if they exist
+      if (Test-Path bin\resources) { Copy-Item bin\resources out\resources -Recurse -Force }
+      if (Test-Path resources) { Copy-Item resources out\resources -Recurse -Force }
+
+      # Copy metadata files if they exist
+      if (Test-Path about.md) { Copy-Item about.md out/ }
+      if (Test-Path changelog.md) { Copy-Item changelog.md out/ }
+      if (Test-Path logo.png) { Copy-Item logo.png out/ }
+      if (Test-Path mod.json) { Copy-Item mod.json out/ }
+
+      # Copy built DLLs
+      if (Test-Path build) { Copy-Item build\*.dll out/ -Force }
+
+      # Cleanup unwanted files
+      Get-ChildItem -Recurse -Include *.psd, *.blend -Path out | Remove-Item -Force -ErrorAction SilentlyContinue
+
+      cd out
+      7z a -tzip adaf.starforge.geode -mx9 *
+
+  - name: Upload Build Artifact
+    uses: actions/upload-artifact@v4
+    with:
+      name: adaf.starforge.geode
+      path: backend/out/adaf.starforge.geode
+```
+
+release:
+name: Create Developmental Release
+needs: build
+runs-on: ubuntu-latest
+permissions:
+contents: write
+
+```
+steps:
+  - name: Download Build Artifact
+    uses: actions/download-artifact@v4
+    with:
+      name: adaf.starforge.geode
+      path: .
+
+  - name: Update Development Release
+    uses: andelf/nightly-release@main
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    with:
+      tag_name: develop
+      name: 'Developmental Build'
+      body: |
+        Development release for commit ${{ github.sha }}.
+      files: |
+        ./adaf.starforge.geode
+```
